@@ -3,6 +3,8 @@
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_ADXL345_U.h>
+#include <ESP8266WiFi.h>
+#include "ESPAsyncWebServer.h"
 
 #define DATA_FILE "./data.txt"
 #define TIME_OUT 10000L
@@ -16,10 +18,6 @@
 #define THRESH_HIGH 2000
 #define HIST 10
 #define LED_PIN 0 // Pin GPIO0, D3//LED_BUILTIN
-
-/* Assign a unique ID to this sensor at the same time */
-Adafruit_ADXL345_Unified accel = Adafruit_ADXL345_Unified(42);
-
 
 
 void blink(uint16_t count) {
@@ -47,11 +45,18 @@ void blinkError(uint16_t code) {
   }
 }
 
+uint16_t readCH3() {
+  uint16_t pwmin = pulseIn(PWM_SOURCE_PIN, HIGH, 20000);
+  //delay(30);
+  //Serial.println(pwmin);
+  return pwmin;
+}
 
 
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
+  
   pinMode(PWM_SOURCE_PIN, INPUT_PULLUP);
   
   pinMode(LED_PIN, OUTPUT);
@@ -75,75 +80,82 @@ void setup() {
     Serial.println("OK.");
   }
 
+  // Check if CH3 is on top position, start Wifi and Webserver then
+  uint16_t pwmin = readCH3();
 
-  unsigned long startTime = millis();
-  unsigned long now = 0;
-  
-  Serial.println("Hit d to delete current data, l to list current data. Wait for 10 secs to continue with data collection.");
-  do {
-    if(Serial.available() > 0) {
-        char x = Serial.read();
+  if (abs(pwmin - THRESH_HIGH) < HIST) {
+    Serial.println("Starting with WiFi.");
 
-        if (x == 'd') {
-          Serial.print("=== Deleting data... ");
-          boolean deleteOk = SPIFFS.remove(DATA_FILE);
-          if (!deleteOk) {
-            Serial.println("Failed.");
-            blinkError(2);
-          }
-          Serial.println("Ok.");
-          
-          Serial.print("Init file... ");
-          File file = SPIFFS.open(DATA_FILE, "w");
-          if (!file) {
-            Serial.println("Failed.");
-            blinkError(2);
-          } else {
-            file.println("t;x;y;z");
-            file.close();
-            Serial.println("Ok. Reset to continue.");
-            blinkError(1);
-          }
-          while(true){delay(1000);};
-        } else if (x == 'l') {
-          Serial.println("=== Listing data:");
-          File file = SPIFFS.open(DATA_FILE, "r");
-          if (!file) {
-            Serial.println("None available.");
-            blinkError(2);
-          } else {
-            while(file.available()) {
-              //Lets read line by line from the file
-              String line = file.readStringUntil('\n');
-              Serial.println(line);
-            }
-            file.close();
-            Serial.println("=== Listing data done. Reset to continue");
-            blinkError(1);
-          }
-          } else {
-            Serial.println("Ignoring " + x);
-        }
+
+    while(true) {
+        blinkFast(5);
+        delay(500);
     }
-    now = millis();
-/*
-    Serial.print("waitingForInput="); Serial.println(waitingForInput);
-    Serial.print("startTime="); Serial.println(startTime);
-    Serial.print("now="); Serial.println(now);
-    Serial.print("now - startTime="); Serial.println(now - startTime);
-  */
-  } while((now - startTime) < TIME_OUT);
-  Serial.println("Time out.");
+
+  } else {
+    WiFi.mode(WIFI_OFF);
+    
+    unsigned long startTime = millis();
+    unsigned long now = 0;
+    
+    Serial.println("Hit d to delete current data, l to list current data. Wait for 10 secs to continue with data collection.");
+    do {
+      if(Serial.available() > 0) {
+          char x = Serial.read();
   
+          if (x == 'd') {
+            Serial.print("=== Deleting data... ");
+            boolean deleteOk = SPIFFS.remove(DATA_FILE);
+            if (!deleteOk) {
+              Serial.println("Failed.");
+              blinkError(2);
+            }
+            Serial.println("Ok.");
+            
+            Serial.print("Init file... ");
+            File file = SPIFFS.open(DATA_FILE, "w");
+            if (!file) {
+              Serial.println("Failed.");
+              blinkError(2);
+            } else {
+              file.println("t;x;y;z");
+              file.close();
+              Serial.println("Ok. Reset to continue.");
+              blinkError(1);
+            }
+            while(true){delay(1000);};
+          } else if (x == 'l') {
+            Serial.println("=== Listing data:");
+            File file = SPIFFS.open(DATA_FILE, "r");
+            if (!file) {
+              Serial.println("None available.");
+              blinkError(2);
+            } else {
+              while(file.available()) {
+                //Lets read line by line from the file
+                String line = file.readStringUntil('\n');
+                Serial.println(line);
+              }
+              file.close();
+              Serial.println("=== Listing data done. Reset to continue");
+              blinkError(1);
+            }
+            } else {
+              Serial.println("Ignoring " + x);
+          }
+      }
+      now = millis();
+  /*
+      Serial.print("waitingForInput="); Serial.println(waitingForInput);
+      Serial.print("startTime="); Serial.println(startTime);
+      Serial.print("now="); Serial.println(now);
+      Serial.print("now - startTime="); Serial.println(now - startTime);
+    */
+    } while((now - startTime) < TIME_OUT);
+    Serial.println("Time out.");
+  }
 }
 
-
-uint16_t readCH3() {
-  uint16_t pwmin = pulseIn(PWM_SOURCE_PIN, HIGH, 20000);
-  //delay(30);
-  //Serial.println(pwmin);
-  return pwmin;
-}
 
 void loop() {
   File file = SPIFFS.open(DATA_FILE, "a");
@@ -151,6 +163,9 @@ void loop() {
     Serial.println("SPIFFS open failed.");
     blinkError(2);
   }
+
+  /* Assign a unique ID to this sensor at the same time */
+  Adafruit_ADXL345_Unified accel = Adafruit_ADXL345_Unified(42);
   
   if(!accel.begin()) {
     /* There was a problem detecting the ADXL345 ... check your connections */
