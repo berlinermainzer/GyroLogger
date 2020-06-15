@@ -46,6 +46,9 @@ const char index_html[] PROGMEM = R"rawliteral(
   <p>
     <span><a href="./delete">Delete</a></span> 
   </p>
+  <p>
+    <span><a href="./reset">Reset</a></span> 
+  </p>  
 </body>
 </html>)rawliteral";
 
@@ -126,6 +129,11 @@ void setup() {
     });
     server.on("/download", HTTP_GET, [](AsyncWebServerRequest *request){
       request->send(SPIFFS, "./data.txt", String(), true);
+    });
+    server.on("/reset", HTTP_GET, [](AsyncWebServerRequest *request){
+      Serial.println("Resetting");
+      request->send(200, "text/plain", "Resetting...");
+      ESP.restart();
     });
 
     server.on("/delete", HTTP_GET, [](AsyncWebServerRequest *request){
