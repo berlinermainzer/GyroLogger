@@ -1,13 +1,18 @@
 #include <FS.h>
 #include <PrintEx.h>
+
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_ADXL345_U.h>
+
 #include <ESP8266WiFi.h>
 #include "ESPAsyncWebServer.h"
 
 #define DATA_FILE "./data.txt"
 #define TIME_OUT 10000L
+
+const char* ssid     = "Chevy";
+const char* password = "Chevelle";
 
 //#define PWM_SOURCE_PIN 5 // Pin GPIO5, D1
 //#define PWM_SOURCE_PIN 16 // Pin GPIO16, D0
@@ -19,6 +24,30 @@
 #define HIST 10
 #define LED_PIN 0 // Pin GPIO0, D3//LED_BUILTIN
 
+
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE HTML><html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    html {
+     font-family: Arial;
+     display: inline-block;
+     margin: 0px auto;
+     text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h2>Gyro Sensor</h2>
+  <p>
+    <span><a href="./download">Download</a></span> 
+  </p>
+  <p>
+    <span><a href="./delete">Delete</a></span> 
+  </p>
+</body>
+</html>)rawliteral";
 
 void blink(uint16_t count) {
   for (uint16_t i = 0; i < count; i++) {
@@ -85,7 +114,40 @@ void setup() {
 
   if (abs(pwmin - THRESH_HIGH) < HIST) {
     Serial.println("Starting with WiFi.");
+    
+    IPAddress IP = WiFi.softAP(ssid, password);
+    Serial.print("AP IP address: ");
+    Serial.println(IP);
 
+    AsyncWebServer server(80);
+
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+      request->send(200, "text/html", index_html);
+    });
+    server.on("/download", HTTP_GET, [](AsyncWebServerRequest *request){
+      request->send(SPIFFS, "./data.txt", String(), true);
+    });
+
+    server.on("/delete", HTTP_GET, [](AsyncWebServerRequest *request){
+      Serial.println("Deleting");
+      boolean deleteOk = SPIFFS.remove(DATA_FILE);
+      if (!deleteOk) {
+        request->send(500, "text/plain", "Could not delete data file.");
+      } else {
+          File file = SPIFFS.open(DATA_FILE, "w");
+          if (!file) {
+            request->send(500, "text/plain", "Could not init data file.");
+          } else {
+            file.print("t;x;y;z");
+            file.close();
+            request->send(200, "text/html", index_html);
+          }
+       }
+    });
+    
+    
+    // Start server
+    server.begin();
 
     while(true) {
         blinkFast(5);
@@ -118,7 +180,7 @@ void setup() {
               Serial.println("Failed.");
               blinkError(2);
             } else {
-              file.println("t;x;y;z");
+              file.print("t;x;y;z");
               file.close();
               Serial.println("Ok. Reset to continue.");
               blinkError(1);
