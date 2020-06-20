@@ -24,6 +24,8 @@ const char* password = "Chevelle";
 #define HIST 10
 #define LED_PIN 0 // Pin GPIO0, D3//LED_BUILTIN
 
+uint32_t flashSize = 0;
+uint32_t currentSize = 0;
 
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html>
@@ -39,7 +41,8 @@ const char index_html[] PROGMEM = R"rawliteral(
   </style>
 </head>
 <body>
-  <h2>Gyro Sensor</h2>
+  <h2>Accelerometer</h2>
+  <p>Flash size: %FLASHSIZE%, file size: %CURRENTSIZE%</p>
   <p>
     <span><a href="./download">Download</a></span> 
   </p>
@@ -84,6 +87,29 @@ uint16_t readCH3() {
   return pwmin;
 }
 
+String processor(const String& var){
+  //Serial.println(var);
+  if(var == "FLASHSIZE"){
+    return String(flashSize);
+  }
+  else if(var == "CURRENTSIZE"){
+    return String(currentSize);
+  }
+  return String();
+}
+
+void updateSizes() {
+  File file = SPIFFS.open(DATA_FILE, "r");
+  if (!file) {
+    currentSize = -1;
+  } else {
+      currentSize = file.size();
+      file.close();
+  }
+  flashSize = ESP.getFlashChipRealSize();
+}
+
+boolean initReset = false;
 
 void setup() {
   // put your setup code here, to run once:
@@ -112,6 +138,10 @@ void setup() {
     Serial.println("OK.");
   }
 
+  // Check how much space we have left
+  updateSizes();
+  Serial.print("Flash size: "); Serial.print(flashSize); Serial.print(", used: "); Serial.println(currentSize);
+
   // Check if CH3 is on top position, start Wifi and Webserver then
   uint16_t pwmin = readCH3();
 
@@ -125,15 +155,20 @@ void setup() {
     AsyncWebServer server(80);
 
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-      request->send(200, "text/html", index_html);
+      if (initReset) {
+        Serial.println("Resetting");
+        ESP.restart();
+      }
+      Serial.println("Home");
+      request->send_P(200, "text/html", index_html, processor);
     });
     server.on("/download", HTTP_GET, [](AsyncWebServerRequest *request){
       request->send(SPIFFS, "./data.txt", String(), true);
     });
     server.on("/reset", HTTP_GET, [](AsyncWebServerRequest *request){
-      Serial.println("Resetting");
-      request->send(200, "text/plain", "Resetting...");
-      ESP.restart();
+      Serial.println("Redirecting");
+      initReset = true;
+      request->redirect("/");
     });
 
     server.on("/delete", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -148,7 +183,9 @@ void setup() {
           } else {
             file.print("t;x;y;z");
             file.close();
-            request->send(200, "text/html", index_html);
+            updateSizes();
+            //request->send_P(200, "text/html", index_html, processor);
+            request->redirect("/");
           }
        }
     });
@@ -243,10 +280,6 @@ void loop() {
     blinkError(3);
   }
   accel.setRange(ADXL345_RANGE_4_G);
-
-  uint32_t flashSize = ESP.getFlashChipRealSize();
-  uint32_t currentSize = file.size();
-  Serial.print("Flash size: "); Serial.print(flashSize); Serial.print(", used: "); Serial.println(currentSize);
 
   StreamEx streamFile = file;
   streamFile.println();
