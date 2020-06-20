@@ -9,7 +9,7 @@
 #include "ESPAsyncWebServer.h"
 
 #define DATA_FILE "./data.txt"
-#define TIME_OUT 10000L
+#define TIME_OUT 5000L
 
 const char* ssid     = "Chevy";
 const char* password = "Chevelle";
@@ -259,21 +259,36 @@ void loop() {
   Serial.println("Collecting data...");
   blinkFast(15);
 
+  unsigned long timeOffset = millis();
+  
   while(currentSize <= flashSize) {
 
     pwmin = readCH3();
-    
-    // Check if CH3 is on HOLD
-    separatorWritten = false;
 
+    // Check if CH3 is on WIFI
+    if ((abs(pwmin - THRESH_HIGH) < HIST)) {
+        Serial.println("Resetting...");
+        file.close();
+        ESP.restart();
+    }
+
+    // Check if CH3 is on HOLD, pause collection then.
+    separatorWritten = false;
     while (abs(pwmin - THRESH_MID) < HIST) {
       if (!separatorWritten) {
-        file.println("===");
+        file.println("t;x;y;z");
         bytesWritten += 4;
         separatorWritten = true;
         Serial.println("Detected CH3 MID value, waiting...");
       }
       pwmin = readCH3();
+
+      // Check if CH3 is on WIFI
+      if ((abs(pwmin - THRESH_HIGH) < HIST)) {
+        Serial.println("Resetting...");
+        file.close();
+        ESP.restart();
+      }
     }
 
     sensors_event_t event; 
@@ -281,10 +296,10 @@ void loop() {
 
     //Serial.print(event.acceleration.x); Serial.print(" ");Serial.print(event.acceleration.y);Serial.print(" ");Serial.println(event.acceleration.z);
     //uint32_t bytesWritten = streamFile.printf("%d;%.2f;%.2f\n", millis(), 42.5f, 17.9);
-    bytesWritten = streamFile.printf("%d;%.3f;%.3f;%.3f\n", millis(), event.acceleration.x, event.acceleration.y, event.acceleration.z);
+    bytesWritten = streamFile.printf("%d;%.2f;%.2f;%.2f\n", millis()-timeOffset, event.acceleration.x, event.acceleration.y, event.acceleration.z);
     currentSize += bytesWritten;
     
-    delay(50);
+    delay(70);
   }
 
 
